@@ -1,0 +1,198 @@
+<html lang="en">
+<head>
+  <title></title>
+  <meta charset="UTF-8">
+  <link rel="stylesheet" type="text/css" href="https://dc-js.github.io/dc.js/css/bootstrap.min.css">
+  <link rel="stylesheet" type="text/css" href="https://dc-js.github.io/dc.js/css/dc.css" />
+  <link rel="stylesheet" type="text/css" href="template.css" />
+  <script src="https://dc-js.github.io/dc.js/js/d3.js"></script>
+  <script src="https://dc-js.github.io/dc.js/js/crossfilter.js"></script>
+  <script src="https://dc-js.github.io/dc.js/js/dc.js"></script>
+  <script src="https://www.lactame.com/lib/ml/2.0.0/ml.min.js"></script>
+</head>
+
+<body><div class="container">
+  <div align="center"><h1 style="h1">K-Means Clustering </h1></div>
+  <h2 align="center" >K Means Clustering of the Top 100 PLayers by FIFA STATS to find the Best Playmaker in World Football
+
+  <div>
+    <div id="ch1">
+      <div align="center" ><h2>Clustered Data</h2></div>
+      <div align="center" id="scatter"></div>
+    </div>  
+
+    <div id="ch2">
+      <div align="center" ><h2>Selection-Enabled Row Chart</h2></div>
+      <div align="center" id="row" style="margin-bottom:20px"></div>
+      <br><br>
+      <div align="center" ><h2>Number of Clusters:</h2>
+        <select id="nclusters" class="dropdown" onchange="draw_graphs(false)">
+          <option value=1>1</option>
+          <option value=2>2</option>
+          <option value=3>3</option>
+          <option value=4 selected>4</option>
+          <option value=5 selected="true">5</option>
+          <option value=6>6</option>
+          <option value=7>7</option>
+          <option value=8>8</option>
+          <option value=9>9</option>
+          <option value=10>10</option>
+        </select>
+      </div>
+    </div> 
+
+
+  <script type="text/javascript">    
+    var var0="Heading";
+    var var1="Overall";
+    var var2="Stronger Foot";
+    var var3="Position";
+    var var4="Potential";
+    var var5="Crossing";
+    var var6="Finishing";
+    var var7="Short Pass";
+    var var8="Volley";
+    var var9="Dribbling";
+    var var10="Free Kick";
+    var var11="Long Pass";
+    var var12="Acceleration";
+    var var13="Sprint Speed";
+    var var14="Ball Control";
+    var var15="Shot Power";
+    var var16="GK";
+    var var17="Vision";
+    var var18="Defending";
+    var var19="Name";
+
+    // hard-coded features to display
+    var attr1 = "Short Pass",
+        attr2 = "Ball Control";
+    
+    // Define the charts globally so that they don't get redefined across multiple calls to draw_graphs() 
+    var scatterplot = dc.scatterPlot("#scatter"),
+        rowChart    = dc.rowChart("#row");  
+
+    // Functions to access the quantities needed to update the K-Means scatterplot
+    function kmAccessor(d){return [d[attr1], d[attr2], d.cluster, d.recId];};
+    function clusterAccessor(d){return d.cluster};
+    function recIdAccessor(d){return [d.recId];};
+    function attrAccessor(d){return [d[attr1],d[attr2]];};
+    function attr1Accessor(d){return d[attr1]};
+    function attr2Accessor(d){return d[attr2]};
+
+
+    // Function that acts as a callback for checkboxes and is used to initialize the page
+    function draw_graphs(redrawAll){
+      /* Load the data. */
+      d3.csv("kmeanss.csv", function(dataset) {
+        dataset.forEach(function(d,i) {
+          d[attr1]=+d[attr1];
+          d[attr2]=+d[attr2];
+          /* Here we're creating a placeholder for the PCA coordinate values. We also need to create a record 
+             ID so that when we have the filtered data, we can know which records to update in the full dataset. 
+             Later, we'll have a callback that will change the values of c1 and c2, replacing them with the 
+             actual PCA components. */
+          d.cluster=0; //assign all points to cluster 0 for now
+          d.recId=i;
+        });
+    
+        // Create a crossfilter index
+        var ndx = crossfilter(dataset);
+
+        /* Create a dimension that groups by (c1,c2,recID), which ensures that every record has a unique group.
+           Then, we create the scatterplot, which we'll modify in the callback functions. */
+        var kmDim=ndx.dimension(kmAccessor),
+            kmGroup=kmDim.group();
+        scatterplot
+          .dimension(kmDim).group(kmGroup)
+          .x(d3.scale.linear().domain([1.1*d3.min(dataset,attr1Accessor), 1.1*d3.max(dataset,attr1Accessor)]))
+          .y(d3.scale.linear().domain([1.1*d3.min(dataset,attr2Accessor), 1.1*d3.max(dataset,attr2Accessor)]))
+          .xAxisLabel(attr1)
+          .yAxisLabel(attr2)
+          .width(550).height(550)
+          .clipPadding(10)
+          .excludedOpacity(0.5)
+          .colorAccessor(function(d){return d.key[2];});
+      
+        /* This is the callback to recompute the PCA in response to changes in the filter/checkboxes. Every chart 
+           that can update the crossfilter must either A) specify this function as the callback for the "filtered"
+           event, or B) use a callback function that subsequently calls this function. Otherwise, the PCA will not 
+           be recomputed on the newly filtered data. */
+        function update_clusters() {
+          /* Retrieve the number of clusters to use. */
+          var k = +document.getElementById("nclusters").value;
+          console.log(k);
+          /* Get the data that satisfies the current filters. Then, create a K-Means object and use it to assign
+             cluster labels to the records.  */
+          var filtData   = kmDim.top(Infinity),
+              filtRecIDs = filtData.map(recIdAccessor)
+              kmData     = filtData.map(kmAccessor),
+              kmResult   = new ML.Clust.kmeans(kmData, k, {}),
+              kmClusters = kmResult.clusters;
+          /* For each record in the filtered set, update its PCA coordinates in the dataset. */
+          for(var i=0; i<kmClusters.length; i++){
+            var id = filtRecIDs[i];
+            dataset[id].cluster = kmClusters[i];
+          }
+          /* Redefine the pca dimension and group to incorporate the newly computed values. */
+          kmDim   = ndx.dimension(kmAccessor);
+          kmGroup = kmDim.group();
+          /* Finally, replace the scatterplot's dimension and group with the new ones. */
+          scatterplot
+            .dimension(kmDim).group(kmGroup)
+            .x(d3.scale.linear().domain([1.1*d3.min(dataset,attr1Accessor), 1.1*d3.max(dataset,attr1Accessor)]))
+            .y(d3.scale.linear().domain([1.1*d3.min(dataset,attr2Accessor), 1.1*d3.max(dataset,attr2Accessor)]))
+            .data(filtData.map(function(d){return {key:kmAccessor(d), value:1};}))
+            .colorAccessor(function(d){return d.key[2];});
+        };
+        
+        // Call the update function to get the correct PCA coordinates
+        update_clusters();
+        scatterplot.on("filtered", update_clusters);
+
+        // Specify a bar chart to demonstrate how the PCA updates based on the filters 
+        var rowDim=ndx.dimension(function(d) {return d["Position"];}),
+            rowgroup=rowDim.group().reduce(
+              function (p, v) {
+                  ++p.count;
+                  p.sum+= +v["Vision"];
+                  p.average = Math.round(p.sum / p.count);
+                  return p;
+              },
+              function (p, v) {
+                  --p.count;
+                  p.sum-= +v["Vision"];
+                  p.average = Math.round(p.sum / p.count);
+                  return p;
+              },
+              function () {
+                  return {
+                      count: 0,
+                      sum: 0,
+                      average: 0
+                  };
+              }
+            );
+        rowChart
+          .width(550).height(250)
+          .dimension(rowDim)
+          .group(rowgroup)
+          .valueAccessor(function(p){return p.value["average"];})
+          .rowsCap(16)
+          .title(function(d) {
+              return "Position: "+ (d.key) + "\nAverage of \"Vision\": "+ ( d.value["average"]);}) 
+          .elasticX(true)
+          .on("filtered", update_clusters);  // IMPORTANT: Make sure update_pca gets called on filter updates ***
+
+        /* Redraw the whole screen if needed, otherwise just update the PCA scatterplot using its internal render 
+           function (which causes it to update smoothly when checkboxes are toggled). */
+        if(redrawAll){
+          dc.renderAll();  
+        }
+        scatterplot.redrawGroup();
+      }); 
+    }; 
+    draw_graphs(true);  
+  </script>
+</div></body>
+</html>
